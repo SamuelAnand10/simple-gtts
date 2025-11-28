@@ -1,15 +1,17 @@
-# streamlit_gtts_stt_safe.py
 """
-streamlit_gtts_stt_htmlrecorder.py
+Minimal Streamlit app:
+- HTML/JS recorder (MediaRecorder) embedded in page.
+- User downloads recorded file, then uploads it using the uploader.
+- App converts uploaded file (webm/mp3/m4a/ogg/wav) to WAV via pydub,
+  transcribes with SpeechRecognition (Google), and automatically puts the
+  transcript into the TTS text area (session_state-backed).
+- Click Speak (TTS) to hear it.
 
-- Uses a pure-HTML/JS in-page recorder (MediaRecorder). The JS provides a Download link for the recorded file.
-- The user then uploads that file with the file uploader (or use any recorded file).
-- The app converts the uploaded file to WAV via pydub and transcribes with SpeechRecognition (Google).
-- Transcription can be placed into the TTS text area and played with gTTS.
-
-Notes:
-- This avoids installing fragile recorder libraries.
-- pydub requires ffmpeg (add packages.txt with 'ffmpeg' on Streamlit Cloud).
+Requirements (requirements.txt):
+streamlit>=1.24.0
+gTTS>=2.3.0
+pydub>=0.25.1
+SpeechRecognition>=3.8.1
 """
 
 import streamlit as st
@@ -18,16 +20,17 @@ import base64, tempfile, os, io
 from pydub import AudioSegment
 import speech_recognition as sr
 
-st.set_page_config(page_title="gTTS + STT (HTML Recorder + Upload)", layout="centered")
-st.title("gTTS — Autoplay Mode + STT (HTML Recorder + Upload)")
+st.set_page_config(page_title="Recorder → STT → TTS", layout="centered")
+st.title("Recorder → STT → TTS (HTML recorder only)")
 
 # -------------------------
-# TTS section (session_state-backed)
+# TTS UI (session_state-backed)
 # -------------------------
 if "tts_text" not in st.session_state:
     st.session_state["tts_text"] = "Hi there, I'm your personal assistant."
 
 lang = st.selectbox("Language (gTTS codes)", ["en", "en-uk", "en-us", "de", "fr"], index=0)
+# session-state-backed text area so we can programmatically set it
 text = st.text_area("Text to speak", value=st.session_state["tts_text"], key="tts_text")
 
 def autoplay_audio_bytes(audio_bytes: bytes):
@@ -42,17 +45,17 @@ def autoplay_audio_bytes(audio_bytes: bytes):
     )
 
 if st.button("Speak (TTS)"):
-    if not text.strip():
-        st.warning("Please enter some text.")
+    if not st.session_state["tts_text"].strip():
+        st.warning("Text area is empty.")
     else:
         gtts_lang = lang.split("-")[0]
-        tts = gTTS(text=text, lang=gtts_lang)
+        tts = gTTS(text=st.session_state["tts_text"], lang=gtts_lang)
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
         try:
             tts.save(tmp.name)
             with open(tmp.name, "rb") as f:
                 autoplay_audio_bytes(f.read())
-            st.success("Done! Your audio is playing automatically.")
+            st.success("Playing TTS.")
         finally:
             try:
                 tmp.close(); os.unlink(tmp.name)
@@ -62,16 +65,16 @@ if st.button("Speak (TTS)"):
 st.markdown("---")
 
 # -------------------------
-# HTML recorder UI
+# HTML recorder (only) + uploader
 # -------------------------
 st.header("Record in your browser (HTML recorder)")
 
 st.write(
-    "Click **Record** below, speak, then **Stop**. "
-    "Click **Download** to save the file, then upload the saved file with the uploader below for transcription."
+    "1) Click **Start Recording**, speak, then **Stop**.  "
+    "2) Click **Download** to save (default filename: recording.webm).  "
+    "3) Immediately upload the saved file below; the app will transcribe it and place the text into the TTS box."
 )
 
-# Simple HTML + JS recorder using MediaRecorder
 RECORDER_HTML = r"""
 <style>
 .rec-btn { padding:8px 12px; margin:6px; font-size:14px; }
@@ -117,7 +120,6 @@ recordBtn.onclick = async () => {
       audioPlayer.src = url;
       playBtn.disabled = false;
       downloadLink.href = url;
-      // default filename
       downloadLink.download = 'recording.webm';
       downloadLink.style.display = 'inline';
       downloadLink.textContent = 'Download (save & upload)';
@@ -125,7 +127,7 @@ recordBtn.onclick = async () => {
     };
     mediaRecorder.start();
   } catch (err) {
-    status.textContent = 'Microphone access denied or not available. Use the upload fallback below.';
+    status.textContent = 'Microphone access denied or not available. Refresh and allow microphone, then try again.';
   }
 };
 
@@ -145,36 +147,26 @@ playBtn.onclick = () => {
 </script>
 """
 
-# Render HTML recorder
 st.components.v1.html(RECORDER_HTML, height=220)
 
 st.markdown("---")
+st.header("Upload recorded file (required)")
 
-# -------------------------
-# Upload fallback & transcription
-# -------------------------
-st.header("Upload recorded file for transcription")
-st.write(
-    "Upload the file you downloaded from the recorder (or any audio file). "
-    "Supported types: wav, mp3, m4a, webm, ogg."
-)
-
-uploaded = st.file_uploader("Upload recorded audio (from the Download link above)", type=["wav", "mp3", "m4a", "webm", "ogg"])
+uploaded = st.file_uploader("Upload the file you downloaded from the recorder (recording.webm)", type=["wav", "mp3", "m4a", "webm", "ogg"])
 if uploaded is not None:
-    st.info("File uploaded — processing...")
+    st.info("File uploaded — processing now...")
     try:
-        # Read bytes and normalize/convert with pydub (requires ffmpeg)
         in_bytes = uploaded.read()
-        audio_seg = AudioSegment.from_file(io.BytesIO(in_bytes))
-        # export to wav bytes
+        # convert/normalize with pydub (ffmpeg required)
+        seg = AudioSegment.from_file(io.BytesIO(in_bytes))
         bio = io.BytesIO()
-        audio_seg.export(bio, format="wav")
+        seg.export(bio, format="wav")
         wav_bytes = bio.getvalue()
 
-        # Play preview in the app
+        # optional preview
         st.audio(wav_bytes, format="audio/wav")
 
-        # Transcribe using SpeechRecognition
+        # transcribe
         r = sr.Recognizer()
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
         try:
@@ -195,16 +187,14 @@ if uploaded is not None:
             except Exception:
                 pass
 
-        st.subheader("Transcription result")
-        st.write(transcript)
-
-        if st.button("Put transcription into TTS text area"):
-            st.session_state["tts_text"] = transcript
-            st.success("Transcription placed into the TTS text area.")
-            st.experimental_rerun()
+        # place transcript directly into TTS text area and rerun so text area updates
+        st.session_state["tts_text"] = transcript
+        st.success("Transcription placed into TTS text area.")
+        st.experimental_rerun()
 
     except Exception as e:
         st.error(f"Failed to process uploaded audio: {e}")
 
 st.markdown("---")
 st.caption("Dependencies: streamlit, gTTS, pydub, SpeechRecognition. System dependency: ffmpeg (for pydub).")
+

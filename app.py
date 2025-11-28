@@ -172,3 +172,4 @@ if 'tts_from_stt' in st.session_state:
 
 st.markdown("---")
 st.caption("Dependencies: streamlit, gTTS, SpeechRecognition, pydub, streamlit-audio-recorder (optional). ffmpeg required for pydub conversion.")
+

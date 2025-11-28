@@ -5,3 +5,4 @@ numpy>=1.25.0
 SpeechRecognition>=3.8.1
 pydub>=0.25.1
 gTTS>=2.3.0
+streamlit-webrtc==0.63.0

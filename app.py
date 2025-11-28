@@ -96,7 +96,7 @@ if st.button("Speak", key="speak_btn_v1"):
         try:
             mp3_path = synthesize_to_file(text, voice, timeout=60)
             autoplay_html(mp3_path, autoplay=True)
-            st.success("Done! Audio should autoplay (if browser allows autoplay).")
+            st.success("Done! Audio should autoplay (if browser allows autoplay).🎧🔥")
             # optional: remove mp3 file if you don't want to keep it
             # os.remove(mp3_path)
         except NoAudioReceived:
@@ -108,8 +108,3 @@ if st.button("Speak", key="speak_btn_v1"):
             st.error(f"Synthesis failed: {e}")
             st.code(traceback.format_exc(), language="text")
 
-
-if st.button("Speak"):
-    mp3_path = synthesize_to_file(text, voice)
-    autoplay_html(mp3_path)
-    st.success("Done! Audio should autoplay 🎧🔥")

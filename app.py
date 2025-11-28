@@ -34,3 +34,80 @@ if st.button("Speak", key="speak_btn"):
 
         autoplay_audio(tmp.name)
         st.success("Done! Your audio is playing automatically.")
+
+
+# --- STT section ---
+st.header("Speech-to-Text (STT)")
+st.write("You can record from your browser (click Record), or upload an audio file. The app will transcribe using Google Speech Recognition via the SpeechRecognition Python library.")
+
+
+use_recorder = False
+try:
+# try to lazy-import the audio recorder component
+from streamlit_audio_recorder import audio_recorder
+use_recorder = True
+except Exception:
+use_recorder = False
+
+
+import speech_recognition as sr
+from pydub import AudioSegment
+
+
+recog = sr.Recognizer()
+
+
+transcript = None
+
+
+if use_recorder:
+st.subheader("Record from your browser")
+st.write("Click the Record button below. When you stop, the recorded audio will be sent to the app for transcription.")
+audio_bytes = audio_recorder()
+if audio_bytes:
+st.success("Audio recorded — processing...")
+# write bytes to temporary file
+tmp_in = tempfile.NamedTemporaryFile(delete=False, suffix=".webm")
+try:
+tmp_in.write(audio_bytes)
+tmp_in.flush()
+tmp_in.close()
+
+
+# convert to WAV using pydub (needs ffmpeg)
+wav_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+try:
+AudioSegment.from_file(tmp_in.name).export(wav_tmp.name, format="wav")
+wav_tmp.close()
+
+
+with sr.AudioFile(wav_tmp.name) as source:
+audio_data = recog.record(source)
+try:
+transcript = recog.recognize_google(audio_data)
+except sr.UnknownValueError:
+transcript = "(Could not understand audio)"
+except sr.RequestError as e:
+transcript = f"(Could not request results; {e})"
+finally:
+try:
+os.unlink(wav_tmp.name)
+except Exception:
+pass
+finally:
+try:
+os.unlink(tmp_in.name)
+except Exception:
+pass
+
+
+# Fallback: upload audio file
+st.subheader("Or upload an audio file")
+uploaded = st.file_uploader("Upload audio (wav, mp3, m4a, webm)", type=["wav", "mp3", "m4a", "webm"])
+if uploaded is not None:
+st.write("File uploaded — processing...")
+# save and convert to WAV
+in_bytes = uploaded.read()
+tmp_in = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded.name)[1])
+try:
+tmp_in.write(in_bytes)
